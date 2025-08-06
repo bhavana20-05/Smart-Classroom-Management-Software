@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Classroom Management System</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { font-family: 'Poppins', sans-serif; background: linear-gradient(135deg, #e6f7f5 0%, #fff8f0 100%); }
+    .teal-gradient { background: linear-gradient(135deg, #20B2AA 0%, #4ECDC4 100%); }
+    .orange-gradient { background: linear-gradient(135deg, #FF8C42 0%, #FFA07A 100%); }
+    .glass-effect { background: rgba(255, 255, 255, 0.25); backdrop-filter: blur(4px); border: 1px solid rgba(255, 255, 255, 0.18); }
+    .chat-message { animation: fadeIn 0.3s ease-in-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .sidebar-icon:hover { transform: translateY(-2px); transition: all 0.2s; }
+    .card-hover:hover { transform: translateY(-5px); transition: all 0.3s ease; }
+    .notification { animation: slideIn 0.3s ease-out forwards, fadeOut 0.3s ease-in forwards 3s; top: 1rem; right: 1rem; z-index: 100; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    // Helper function to safely get item from localStorage
+    const getStoredItem = (key, defaultValue) => {
+      try {
+        const item = localStorage.getItem(key);
+        return item ? JSON.parse(item) : defaultValue;
+      } catch (error) {
+        console.error(`Error reading localStorage key "${key}":`, error);
+        return defaultValue;
+      }
+    };
+
+    // Helper function to safely set item to localStorage
+    const setStoredItem = (key, value) => {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch (error) {
+        console.error(`Error writing localStorage key "${key}":`, error);
+      }
+    };
+
+    // Context for app state
+    const AppContext = React.createContext();
+    
+    const AppProvider = ({ children }) => {
+      // Initialize state from localStorage or use defaults
+      const [user, setUser] = React.useState(() => getStoredItem('scms_user', null));
+      const [currentPage, setCurrentPage] = React.useState(() => getStoredItem('scms_currentPage', 'login'));
+      const [sidebarOpen, setSidebarOpen] = React.useState(true);
+      const [notification, setNotification] = React.useState(null);
+      const [alerts, setAlerts] = React.useState(() => getStoredItem('scms_alerts', [
+        { id: 1, title: 'Exam Schedule Updated', message: 'Final exams have been rescheduled to next week.', date: '2023-11-15', priority: 'high' },
+        { id: 2, title: 'Parent-Teacher Meeting', message: 'Reminder for the quarterly parent-teacher meeting this Friday.', date: '2023-11-18', priority: 'medium' }
+      ]));
+      // Initial resources. Note: 'content' will be populated on upload for real files.
+      const [resources, setResources] = React.useState(() => getStoredItem('scms_resources', [
+        { id: 1, name: 'Sample DOCX File', type: 'DOCX', size: '0.5 MB', date: '2023-11-10', content: '' },
+        { id: 2, name: 'Sample PPTX Presentation', type: 'PPTX', size: '1.2 MB', date: '2023-11-12', content: '' }
+      ]));
+      const [students, setStudents] = React.useState(() => getStoredItem('scms_students', {
+        data: [
+          { id: 1, name: 'Alex Johnson', present: true },
+          { id: 2, name: 'Maria Garcia', present: false },
+          { id: 3, name: 'James Wilson', present: true },
+          { id: 4, name: 'Sarah Brown', present: true },
+          { id: 5, name: 'David Lee', present: false }
+        ],
+        lastAttendanceTakenDate: null
+      }));
+      const [events, setEvents] = React.useState(() => getStoredItem('scms_events', [
+        { id: 1, title: 'Math Class', date: '2023-11-15', time: '09:00 AM', subject: 'Mathematics' },
+        { id: 2, title: 'Science Lab', date: '2023-11-15', time: '11:00 AM', subject: 'Science' },
+        { id: 3, title: 'English Literature', date: '2023-11-16', time: '10:00 AM', subject: 'English' },
+        { id: 4, title: 'History Seminar', date: '2023-11-17', time: '02:00 PM', subject: 'History' }
+      ]));
+      const [weeklyTimetable, setWeeklyTimetable] = React.useState(() => getStoredItem('scms_weeklyTimetable', {
+        Monday: [{ id: 101, title: 'Math A', time: '09:00 AM', subject: 'Mathematics' },
+{ id: 102, title: 'physics ', time: '10:30 AM', subject: 'physics' }],
+        Tuesday: [{ id: 103, title: 'Science B', time: '10:00 AM', subject: 'Science' }],
+        Wednesday: [],
+        Thursday: [],
+        Friday: [{ id: 105, title: 'English C', time: '01:00 PM', subject: 'English' }],
+        Saturday: [],
+        Sunday: []
+      }));
+      const [editingItem, setEditingItem] = React.useState(null);
+
+      // --- Sync state with localStorage ---
+      React.useEffect(() => { setStoredItem('scms_user', user); }, [user]);
+      React.useEffect(() => { setStoredItem('scms_currentPage', currentPage); }, [currentPage]);
+      React.useEffect(() => { setStoredItem('scms_alerts', alerts); }, [alerts]);
+      React.useEffect(() => { setStoredItem('scms_resources', resources); }, [resources]);
+      React.useEffect(() => { setStoredItem('scms_students', students); }, [students]);
+      React.useEffect(() => { setStoredItem('scms_events', events); }, [events]);
+      React.useEffect(() => { setStoredItem('scms_weeklyTimetable', weeklyTimetable); }, [weeklyTimetable]);
+      // --- End Sync state with localStorage ---
+      
+      const showNotification = (message, type = 'success') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 3500);
+      };
+      
+      const login = (email, password, role) => {
+        setUser({ name: role === 'teacher' ? 'Faculty Demo' : 'Student Demo', email, role });
+        setCurrentPage('dashboard');
+        showNotification('Successfully logged in!');
+      };
+      
+      const signup = (name, email, password, role) => {
+        setUser({ name, email, role });
+        setCurrentPage('dashboard');
+        showNotification('Account created successfully!');
+      };
+      
+      const logout = () => {
+        setUser(null);
+        setCurrentPage('login');
+      };
+      
+      const addAlert = (alert) => {
+        const newAlert = { ...alert, id: alerts.length + 1, date: new Date().toISOString().split('T')[0] };
+        setAlerts([...alerts, newAlert]);
+        showNotification('Alert created successfully!');
+      };
+      
+      const updateAlert = (updatedAlert) => {
+        setAlerts(alerts.map(alert => alert.id === updatedAlert.id ? updatedAlert : alert));
+        setEditingItem(null);
+        showNotification('Alert updated successfully!');
+      };
+      
+      const deleteAlert = (id) => {
+        setAlerts(alerts.filter(alert => alert.id !== id));
+        showNotification('Alert deleted successfully!');
+      };
+      
+      // Modified addResource to properly add content and size after FileReader completes
+      const addResource = (resource) => {
+        const newResource = { 
+          ...resource, 
+          id: resources.length + 1, 
+          date: new Date().toISOString().split('T')[0]
+        };
+        setResources(prevResources => [...prevResources, newResource]);
+        showNotification('Resource uploaded successfully!');
+      };
+      
+      const updateResource = (updatedResource) => {
+        setResources(resources.map(resource => resource.id === updatedResource.id ? updatedResource : resource));
+        setEditingItem(null);
+        showNotification('Resource updated successfully!');
+      };
+      
+      const deleteResource = (id) => {
+        setResources(resources.filter(resource => resource.id !== id));
+        showNotification('Resource deleted successfully!');
+      };
+      
+      const toggleAttendance = (studentId) => {
+        setStudents(prevStudents => ({
+            ...prevStudents,
+            data: prevStudents.data.map(student => 
+                student.id === studentId ? { ...student, present: !student.present } : student
+            )
+        }));
+        showNotification('Attendance status changed!');
+      };
+
+      const saveAttendanceForToday = () => {
+          setStudents(prevStudents => ({
+              ...prevStudents,
+              lastAttendanceTakenDate: new Date().toISOString().split('T')[0]
+          }));
+          showNotification('Attendance Saved!', 'success');
+      };
+      
+      const addEvent = (event) => {
+        const newEvent = { ...event, id: events.length + 1 };
+        setEvents([...events, newEvent]);
+        showNotification('Event added successfully!');
+      };
+      
+      const updateEvent = (updatedEvent) => {
+        setEvents(events.map(event => event.id === updatedEvent.id ? updatedEvent : event));
+        setEditingItem(null);
+        showNotification('Event updated successfully!');
+      };
+      
+      const deleteEvent = (id) => {
+        setEvents(events.filter(event => event.id !== id));
+        showNotification('Event deleted successfully!');
+      };
+
+      const addTimetableEntry = (day, entry) => {
+        const newEntry = { ...entry, id: Date.now() };
+        setWeeklyTimetable(prev => ({
+          ...prev,
+          [day]: [...prev[day], newEntry]
+        }));
+        showNotification(`Timetable entry added for ${day}!`);
+      };
+
+      const updateTimetableEntry = (day, updatedEntry) => {
+        setWeeklyTimetable(prev => ({
+          ...prev,
+          [day]: prev[day].map(entry => entry.id === updatedEntry.id ? updatedEntry : entry)
+        }));
+        setEditingItem(null);
+        showNotification('Timetable entry updated!');
+      };
+
+      const deleteTimetableEntry = (day, id) => {
+        setWeeklyTimetable(prev => ({
+          ...prev,
+          [day]: prev[day].filter(entry => entry.id !== id)
+        }));
+        showNotification('Timetable entry deleted!');
+      };
+
+      // --- Local Storage Synchronization Listener ---
+      React.useEffect(() => {
+        const handleStorageChange = (e) => {
+          if (e.key === 'scms_students' && e.newValue) {
+            setStudents(JSON.parse(e.newValue));
+          }
+          if (e.key === 'scms_events' && e.newValue) {
+            setEvents(JSON.parse(e.newValue));
+          }
+          if (e.key === 'scms_weeklyTimetable' && e.newValue) {
+            setWeeklyTimetable(JSON.parse(e.newValue));
+          }
+          if (e.key === 'scms_alerts' && e.newValue) {
+            setAlerts(JSON.parse(e.newValue));
+          }
+          if (e.key === 'scms_resources' && e.newValue) {
+            setResources(JSON.parse(e.newValue));
+          }
+          if (e.key === 'scms_user' && e.newValue) {
+            setUser(JSON.parse(e.newValue));
+          } else if (e.key === 'scms_user' && !e.newValue) {
+            setUser(null);
+            setCurrentPage('login');
+          }
+          if (e.key === 'scms_currentPage' && e.newValue) {
+            setCurrentPage(JSON.parse(e.newValue));
+          }
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+        return () => {
+          window.removeEventListener('storage', handleStorageChange);
+        };
+      }, []);
+      // --- End Local Storage Synchronization Listener ---
+      
+      return (
+        <AppContext.Provider value={{
+          user, login, signup, logout, currentPage, setCurrentPage,
+          sidebarOpen, setSidebarOpen, notification,
+          alerts, addAlert, updateAlert, deleteAlert,
+          resources, addResource, updateResource, deleteResource,
+          students: students.data,
+          lastAttendanceTakenDate: students.lastAttendanceTakenDate,
+          toggleAttendance, saveAttendanceForToday,
+          events, addEvent, updateEvent, deleteEvent,
+          weeklyTimetable, addTimetableEntry, updateTimetableEntry, deleteTimetableEntry,
+          editingItem, setEditingItem, showNotification
+        }}>
+          {children}
+        </AppContext.Provider>
+      );
+    };
+    
+    // Reusable Components
+    const Button = ({ children, onClick, variant = 'primary', className = '', disabled = false, type = 'button' }) => {
+      const baseClasses = "px-4 py-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-opacity-50 ";
+      const variantClasses = {
+        primary: "teal-gradient text-white hover:shadow-lg focus:ring-teal-500",
+        secondary: "orange-gradient text-white hover:shadow-lg focus:ring-orange-500",
+        outline: "border border-gray-300 hover:bg-gray-50 focus:ring-gray-500",
+        danger: "bg-red-500 text-white hover:bg-red-600 focus:ring-red-500"
+      };
+      return (
+        <button type={type} onClick={onClick} disabled={disabled}
+          className={`${baseClasses} ${variantClasses[variant]} ${className} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+          {children}
+        </button>
+      );
+    };
+    
+    const Input = ({ label, type = 'text', placeholder, value, onChange, required = false, error = '' }) => (
+      <div className="mb-4">
+        {label && <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}
+        <input type={type} placeholder={placeholder} value={value} onChange={onChange} required={required}
+          className={`w-full px-3 py-2 border ${error ? 'border-red-500' : 'border-gray-300'} rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent`}
+        />
+        {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
+      </div>
+    );
+    
+    const Card = ({ children, className = '' }) => (
+      <div className={`bg-white rounded-xl shadow-md overflow-hidden card-hover ${className}`}>{children}</div>
+    );
+    
+    const Logo = ({ size = 'md' }) => {
+      const sizeClasses = { sm: 'w-8 h-8', md: 'w-12 h-12', lg: 'w-16 h-16' };
+      return (
+        <div className={`${sizeClasses[size]} rounded-full flex items-center justify-center teal-gradient text-white font-bold`}>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-full w-full p-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+          </svg>
+        </div>
+      );
+    };
+    
+    const Notification = ({ message, type }) => {
+      const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+      return (
+        <div className={`fixed notification ${bgColor} text-white px-4 py-2 rounded-lg shadow-lg`}>{message}</div>
+      );
+    };
+    
+    // Login Page
+    const LoginPage = () => {
+      const { login, setCurrentPage } = React.useContext(AppContext);
+      const [email, setEmail] = React.useState('');
+      const [password, setPassword] = React.useState('');
+      const [role, setRole] = React.useState('student');
+      const [errors, setErrors] = React.useState({});
+      
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        const newErrors = {};
+        if (!email) newErrors.email = 'Email is required';
+        else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = 'Email is invalid';
+        if (!password) newErrors.password = 'Password is required';
+        else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+        
+        if (Object.keys(newErrors).length === 0) {
+          login(email, password, role);
+        } else {
+          setErrors(newErrors);
+        }
+      };
+      
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-lg">
+            <div className="text-center">
+              <div className="flex justify-center"><Logo size="lg" /></div>
+              <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Smart Classroom</h2>
+              <p className="mt-2 text-sm text-gray-600">Sign in to your account</p>
+            </div>
+            <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+              <Input label="Email Address" type="email" placeholder="Enter your email" value={email}
+                onChange={(e) => setEmail(e.target.value)} error={errors.email} required />
+              <Input label="Password" type="password" placeholder="Enter your password" value={password}
+                onChange={(e) => setPassword(e.target.value)} error={errors.password} required />
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Select Role</label>
+                <select value={role} onChange={(e) => setRole(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                  <option value="student">Student</option>
+                  <option value="teacher">Teacher</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <input id="remember-me" name="remember-me" type="checkbox"
+                    className="h-4 w-4 text-teal-600 focus:ring-teal-500 border-gray-300 rounded" />
+                  <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">Remember me</label>
+                </div>
+                <div className="text-sm">
+                  <a href="#" className="font-medium text-teal-600 hover:text-teal-500">Forgot password?</a>
+                </div>
+              </div>
+              <div>
+                <Button variant="primary" className="w-full" type="submit">Sign in</Button>
+              </div>
+            </form>
+            <div className="text-center mt-4">
+              <p className="text-sm text-gray-600">
+                Don't have an account?{' '}
+                <button onClick={() => setCurrentPage('signup')} className="font-medium text-teal-600 hover:text-teal-500">
+                  Sign up
+                </button>
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    };
+    
+    // Signup Page
+    const SignupPage = () => {
+      const { signup, setCurrentPage } = React.useContext(AppContext);
+      const [name, setName] = React.useState('');
+      const [email, setEmail] = React.useState('');
+      const [password, setPassword] = React.useState('');
+      const [confirmPassword, setConfirmPassword] = React.useState('');
+      const [role, setRole] = React.useState('student');
+      const [errors, setErrors] = React.useState({});
+      
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        const newErrors = {};
+        if (!name) newErrors.name = 'Name is required';
+        if (!email) newErrors.email = 'Email is required';
+        else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = 'Email is invalid';
+        if (!password) newErrors.password = 'Password is required';
+        else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+        if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+        
+        if (Object.keys(newErrors).length === 0) {
+          signup(name, email, password, role);
+        } else {
+          setErrors(newErrors);
+        }
+      };
+      
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-lg">
+            <div className="text-center">
+              <div className="flex justify-center"><Logo size="lg" /></div>
+              <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Create Account</h2>
+              <p className="mt-2 text-sm text-gray-600">Join Smart Classroom Management System</p>
+            </div>
+            <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+              <Input label="Full Name" placeholder="Enter your name" value={name}
+                onChange={(e) => setName(e.target.value)} error={errors.name} required />
+              <Input label="Email Address" type="email" placeholder="Enter your email" value={email}
+                onChange={(e) => setEmail(e.target.value)} error={errors.email} required />
+              <Input label="Password" type="password" placeholder="Create a password" value={password}
+                onChange={(e) => setPassword(e.target.value)} error={errors.password} required />
+              <Input label="Confirm Password" type="password" placeholder="Confirm your password" value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)} error={errors.confirmPassword} required />
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Select Role</label>
+                <select value={role} onChange={(e) => setRole(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                  <option value="student">Student</option>
+                  <option value="teacher">Teacher</option>
+                </select>
+              </div>
+
+              <div>
+                <Button variant="primary" className="w-full" type="submit">Sign up</Button>
+              </div>
+            </form>
+            <div className="text-center mt-4">
+              <p className="text-sm text-gray-600">
+                Already have an account?{' '}
+                <button onClick={() => setCurrentPage('login')} className="font-medium text-teal-600 hover:text-teal-500">
+                  Sign in
+                </button>
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    };
+    
+    // Layout Components
+    const Sidebar = () => {
+      const { currentPage, setCurrentPage, sidebarOpen, setSidebarOpen, user, logout } = React.useContext(AppContext);
+      
+      const menuItems = [
+        { id: 'dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+        { id: 'attendance', label: 'Attendance', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01', roles: ['teacher'] },
+        { id: 'resources', label: 'Resources', icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+        { id: 'schedule', label: 'Schedule', icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
+        { id: 'alerts', label: 'Alerts', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
+        { id: 'chat', label: 'Chat Assistant', icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' }
+      ];
+      
+      return (
+        <div className={`fixed inset-y-0 left-0 z-30 transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 transition duration-300 ease-in-out flex flex-col bg-white border-r border-gray-200 w-64`}>
+          <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
+            <div className="flex items-center">
+              <Logo />
+              <span className="ml-2 text-lg font-semibold">SCMS</span>
+            </div>
+            <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1 rounded-md text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-teal-500">
+              <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto">
+            <nav className="px-2 py-4 space-y-1">
+              {menuItems.map((item) => (
+                (!item.roles || item.roles.includes(user?.role)) && (
+                  <button key={item.id} onClick={() => setCurrentPage(item.id)}
+                    className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors duration-150 ease-in-out ${
+                      currentPage === item.id ? 'teal-gradient text-white' : 'text-gray-700 hover:bg-gray-100'
+                    }`}>
+                    <svg className="mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
+                    </svg>
+                    {item.label}
+                  </button>
+                )
+              ))}
+            </nav>
+          </div>
+          
+          <div className="p-4 border-t border-gray-200">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <div className="h-8 w-8 rounded-full bg-teal-500 flex items-center justify-center text-white font-medium">
+                  {user?.name.charAt(0)}
+                </div>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm font-medium text-gray-700">{user?.name}</p>
+                <p className="text-xs text-gray-500">{user?.role}</p>
+              </div>
+              <button onClick={logout} className="ml-auto p-1 rounded-md text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-teal-500">
+                <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+    
+    const Header = () => {
+      const { setSidebarOpen } = React.useContext(AppContext);
+      return (
+        <header className="sticky top-0 z-20 bg-white shadow-sm h-16 flex items-center px-4 lg:px-6">
+          <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 rounded-md text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-teal-500">
+            <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <div className="ml-4 lg:ml-0">
+            <h1 className="text-xl font-semibold text-gray-800">Smart Classroom Management System</h1>
+          </div>
+          <div className="ml-auto flex items-center space-x-4">
+            <button className="p-1 rounded-full text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-teal-500">
+              <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+            </button>
+            <button className="p-1 rounded-full text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-teal-500">
+              <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          </div>
+        </header>
+      );
+    };
+    
+    // Feature Pages
+    const DashboardPage = () => {
+      const { students, alerts, resources, events, setCurrentPage, user, lastAttendanceTakenDate } = React.useContext(AppContext);
+      
+      const calculateAttendanceRate = (studentData) => {
+          if (!studentData || studentData.length === 0) return '0%';
+          const presentCount = studentData.filter(s => s.present).length;
+          return `${Math.round((presentCount / studentData.length) * 100)}%`;
+      };
+
+      const today = new Date().toISOString().split('T')[0];
+      const isAttendanceUpdatedToday = lastAttendanceTakenDate === today;
+      
+      let attendanceRateDisplay;
+      if (user?.role === 'teacher') {
+          attendanceRateDisplay = isAttendanceUpdatedToday ? calculateAttendanceRate(students) : 'Not Updated Today';
+      } else {
+          attendanceRateDisplay = isAttendanceUpdatedToday ? calculateAttendanceRate(students) : 'Not Updated Today';
+      }
+
+      const stats = [
+        { title: 'Total Students', value: students.length, icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z', color: 'teal-gradient' },
+        { title: 'Attendance Rate', value: attendanceRateDisplay, icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01', color: 'orange-gradient' },
+        { title: 'Resources', value: resources.length, icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10', color: 'teal-gradient' },
+        { title: 'Alerts', value: alerts.length, icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9', color: 'orange-gradient' }
+      ];
+      
+      return (
+        <div className="p-4 lg:p-6 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {stats.map((stat, index) => (
+              <Card key={index} className="p-4">
+                <div className="flex items-center">
+                  <div className={`p-3 rounded-full ${stat.color}`}>
+                    <svg className="h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={stat.icon} />
+                    </svg>
+                  </div>
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-gray-500">{stat.title}</p>
+                    <p className="text-2xl font-semibold text-gray-900">{stat.value}</p>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card className="p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Recent Alerts</h2>
+                <Button variant="outline" className="text-sm" onClick={() => setCurrentPage('alerts')}>View All</Button>
+              </div>
+              <div className="space-y-3">
+                {alerts.slice(0, 3).map((alert) => (
+                  <div key={alert.id} className="p-3 border rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium text-gray-900">{alert.title}</h3>
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        alert.priority === 'high' ? 'bg-red-100 text-red-800' : 
+                        alert.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' : 
+                        'bg-green-100 text-green-800'
+                      }`}>{alert.priority}</span>
+                    </div>
+                    <p className="mt-1 text-sm text-gray-600">{alert.message}</p>
+                    <p className="mt-2 text-xs text-gray-500">{alert.date}</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+            
+            <Card className="p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Upcoming Schedule</h2>
+                <Button variant="outline" className="text-sm" onClick={() => setCurrentPage('schedule')}>View Calendar</Button>
+              </div>
+              <div className="space-y-3">
+                {events.slice(0, 3).map((event) => (
+                  <div key={event.id} className="p-3 border rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium text-gray-900">{event.title}</h3>
+                      <span className="text-sm text-gray-500">{event.time}</span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-xs text-gray-500">{event.date}</span>
+                      <span className="px-2 py-1 text-xs bg-teal-100 text-teal-800 rounded-full">{event.subject}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+          
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Student Attendance Overview</h2>
+              {user?.role === 'teacher' && (
+                <Button variant="outline" className="text-sm" onClick={() => setCurrentPage('attendance')}>Mark Attendance</Button>
+              )}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead>
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {students.map((student) => (
+                    <tr key={student.id}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{student.name}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          student.present ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>{student.present ? 'Present' : 'Absent'}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      );
+    };
+    
+    const AttendancePage = () => {
+      const { students, toggleAttendance, saveAttendanceForToday, user, lastAttendanceTakenDate } = React.useContext(AppContext);
+      const [date, setDate] = React.useState(new Date().toISOString().split('T')[0]);
+      const today = new Date().toISOString().split('T')[0];
+
+      if (user?.role === 'student') { // Explicitly check if student
+        return (
+          <div className="p-4 lg:p-6 flex items-center justify-center min-h-[calc(10vh)]">
+            <Card className="p-8 text-center bg-red-50 border border-red-200 text-red-800">
+              <h2 className="text-2xl font-semibold mb-4">Permission Denied</h2>
+              <p>As a student, you do not have permission to access the Attendance Tracker.</p>
+            </Card>
+          </div>
+        );
+      }
+
+      return (
+        <div className="p-4 lg:p-6 space-y-6">
+          <Card className="p-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4 md:mb-0">Attendance Tracker</h2>
+              <div className="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-2">
+                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full md:w-auto" />
+                <Button variant="primary" onClick={saveAttendanceForToday}>Save Attendance</Button>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {students.map((student) => (
+                    <tr key={student.id}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">{student.name}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          student.present ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>{student.present ? 'Present' : 'Absent'}</span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {user?.role === 'teacher' && (
+                          <Button variant={student.present ? 'danger' : 'primary'} className="text-sm"
+                            onClick={() => toggleAttendance(student.id)}>
+                            Mark {student.present ? 'Absent' : 'Present'}
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          
+          <Card className="p-4">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Attendance Summary</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 border rounded-lg">
+                <p className="text-sm text-gray-500">Total Students</p>
+                <p className="text-2xl font-semibold">{students.length}</p>
+              </div>
+              <div className="p-4 border rounded-lg">
+                <p className="text-sm text-gray-500">Present</p>
+                <p className="text-2xl font-semibold text-green-600">{students.filter(s => s.present).length}</p>
+              </div>
+              <div className="p-4 border rounded-lg">
+                <p className="text-sm text-gray-500">Absent</p>
+                <p className="text-2xl font-semibold text-red-600">{students.filter(s => !s.present).length}</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      );
+    };
+    
+    // START of your provided Resources component, adapted for this full code
+    const ResourcesPage = () => {
+      const { user, resources, addResource, deleteResource, showNotification } = React.useContext(AppContext);
+      const [selectedFile, setSelectedFile] = React.useState(null);
+      const [fileName, setFileName] = React.useState('');
+      const [fileType, setFileType] = React.useState('');
+      const [showViewModal, setShowViewModal] = React.useState(false);
+      const [viewableFileUrl, setViewableFileUrl] = React.useState('');
+      const [viewableFileType, setViewableFileType] = React.useState(''); // To determine if it's an image or PDF
+
+      const fileInputRef = React.useRef(null);
+
+      const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          setSelectedFile(file);
+          setFileName(file.name);
+          // Set fileType to raw MIME type for more accurate handling later
+          setFileType(file.type); 
+        }
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!selectedFile) {
+          showNotification('Please select a file to upload.', 'error');
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const newResource = {
+            name: fileName || selectedFile.name,
+            // Use actual MIME type from file.type or derive from extension for display
+            type: selectedFile.type.split('/')[1] ? selectedFile.type.split('/')[1].toUpperCase() : 'UNKNOWN',
+            size: (selectedFile.size / 1024 / 1024).toFixed(2) + ' MB', // Size in MB
+            content: reader.result, // Base64 content (Data URL)
+          };
+          addResource(newResource);
+          setSelectedFile(null);
+          setFileName('');
+          setFileType('');
+          if (fileInputRef.current) {
+            fileInputRef.current.value = ''; // Clear the file input
+          }
+        };
+        reader.onerror = () => {
+            showNotification('Failed to read file.', 'error');
+        };
+        reader.readAsDataURL(selectedFile); // Read file as Base64 Data URL
+      };
+
+      const handleDownload = (resource) => {
+        if (resource.content) {
+          const link = document.createElement('a');
+          link.href = resource.content;
+          link.download = resource.name; // Use the stored file name
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          showNotification(`Downloading ${resource.name}...`, 'info');
+        } else {
+          showNotification('File content not available for download.', 'error');
+        }
+      };
+
+      const handleView = (resource) => {
+        if (resource.content) {
+          // Get the actual MIME type from the Data URL for correct rendering
+          const mimeType = resource.content.split(';')[0].split(':')[1];
+          setViewableFileType(mimeType); // e.g., 'application/pdf', 'image/png'
+
+          // For viewing, we directly use the Data URL
+          setViewableFileUrl(resource.content);
+          setShowViewModal(true);
+        } else {
+          showNotification('File content not available for viewing.', 'error');
+        }
+      };
+
+      const closeViewModal = () => {
+        setShowViewModal(false);
+        // No need to revokeObjectURL if using Data URL directly, as they are not object URLs
+        setViewableFileUrl('');
+        setViewableFileType('');
+      };
+
+      return (
+        <div className="p-6 bg-white rounded-lg shadow-md">
+          <h2 className="text-2xl font-semibold text-gray-800 mb-6">Classroom Resources</h2>
+
+          {user && user.role === 'teacher' && (
+            <Card className="mb-8 p-6">
+              <h3 className="text-xl font-medium text-gray-700 mb-4">Upload New Resource</h3>
+              <form onSubmit={handleSubmit}>
+                <div className="mb-4">
+                  <label htmlFor="file-upload" className="block text-sm font-medium text-gray-700 mb-1">Select File</label>
+                  <input
+                    id="file-upload"
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
+                  />
+                  {selectedFile && <p className="mt-2 text-sm text-gray-600">Selected: {selectedFile.name} ({selectedFile.type})</p>}
+                </div>
+                <Input
+                  label="Resource Name (Optional)"
+                  placeholder="e.g., Chapter 1 Notes"
+                  value={fileName}
+                  onChange={(e) => setFileName(e.target.value)}
+                />
+                <Button type="submit" variant="primary">Upload Resource</Button>
+              </form>
+            </Card>
+          )}
+
+          <div className="mt-8">
+            <h3 className="text-xl font-medium text-gray-700 mb-4">Uploaded Files</h3>
+            {resources.length === 0 ? (
+              <p className="text-gray-600">No resources uploaded yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                  <thead>
+                    <tr className="bg-gray-100 border-b border-gray-200 text-gray-600 uppercase text-sm leading-normal">
+                      <th className="py-3 px-6 text-left">File Name</th>
+                      <th className="py-3 px-6 text-left">Type</th>
+                      <th className="py-3 px-6 text-left">Size</th>
+                      <th className="py-3 px-6 text-left">Uploaded Date</th>
+                      <th className="py-3 px-6 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-gray-700 text-sm font-light">
+                    {resources.map((resource) => (
+                      <tr key={resource.id} className="border-b border-gray-200 hover:bg-gray-50">
+                        <td className="py-3 px-6 text-left whitespace-nowrap">
+                          <div className="flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              {resource.type.toLowerCase() === 'pdf' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />}
+                              {['png', 'jpeg', 'jpg', 'gif'].includes(resource.type.toLowerCase()) && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />}
+                              {/* NOTE: resource.type is 'DOCX', 'PPTX', etc. here, not full MIME type. */}
+                              {(resource.type.toLowerCase() === 'docx' || resource.type.toLowerCase() === 'doc') && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />}
+                              {(resource.type.toLowerCase() === 'pptx' || resource.type.toLowerCase() === 'ppt') && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2zM12 15V9" />}
+                              {/* Add more icons for other file types if needed */}
+                              {!['pdf', 'png', 'jpeg', 'jpg', 'gif', 'docx', 'doc', 'pptx', 'ppt'].includes(resource.type.toLowerCase()) && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />}
+                            </svg>
+                            <span>{resource.name}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-6 text-left">{resource.type}</td>
+                        <td className="py-3 px-6 text-left">{resource.size}</td>
+                        <td className="py-3 px-6 text-left">{resource.date}</td>
+                        <td className="py-3 px-6 text-center">
+                          <div className="flex item-center justify-center space-x-2">
+                            {/* View button (only for PDF and image files, and if content exists) */}
+                            {resource.content && (resource.type.toLowerCase() === 'pdf' || ['png', 'jpg', 'jpeg', 'gif'].includes(resource.type.toLowerCase())) && (
+                              <Button variant="outline" className="px-3 py-1 text-xs" onClick={() => handleView(resource)}>
+                                View
+                              </Button>
+                            )}
+                            {resource.content && ( // Only show download if content actually exists
+                              <Button variant="primary" className="px-3 py-1 text-xs" onClick={() => handleDownload(resource)}>
+                                Download
+                              </Button>
+                            )}
+                            {user && user.role === 'teacher' && (
+                              <Button variant="danger" className="px-3 py-1 text-xs" onClick={() => deleteResource(resource.id)}>
+                                Delete
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* View File Modal */}
+          {showViewModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl h-[80vh] flex flex-col">
+                <div className="flex justify-between items-center p-4 border-b">
+                  <h3 className="text-lg font-semibold">View File</h3>
+                  <Button onClick={closeViewModal} variant="outline" className="text-gray-600 hover:text-gray-900">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </Button>
+                </div>
+                <div className="flex-grow p-4 overflow-auto">
+                  {viewableFileUrl && (
+                    viewableFileType.includes('image') ? ( // Checks for 'image/png', 'image/jpeg', etc.
+                      <img src={viewableFileUrl} alt="Viewable Image" className="max-w-full max-h-full mx-auto" />
+                    ) : viewableFileType === 'application/pdf' ? ( // Checks for 'application/pdf'
+                      <iframe src={viewableFileUrl} className="w-full h-full border-0"></iframe>
+                    ) : (
+                      <p className="text-center text-gray-600">Preview not available for this file type. Please download to view.</p>
+                    )
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+    // END of your provided Resources component
+
+    const SchedulePage = () => {
+      const { events, addEvent, updateEvent, deleteEvent,
+              weeklyTimetable, addTimetableEntry, updateTimetableEntry, deleteTimetableEntry,
+              editingItem, setEditingItem, user } = React.useContext(AppContext);
+
+      const [showEventModal, setShowEventModal] = React.useState(false);
+      const [showTimetableModal, setShowTimetableModal] = React.useState(false);
+      const [eventTitle, setEventTitle] = React.useState('');
+      const [eventDate, setEventDate] = React.useState('');
+      const [eventTime, setEventTime] = React.useState('');
+      const [eventSubject, setEventSubject] = React.useState('');
+      const [selectedDate, setSelectedDate] = React.useState(new Date().toISOString().split('T')[0]);
+      const [timetableDay, setTimetableDay] = React.useState('Monday');
+      const [timetableTitle, setTimetableTitle] = React.useState('');
+      const [timetableTime, setTimetableTime] = React.useState('');
+      const [timetableSubject, setTimetableSubject] = React.useState('');
+      const [editingTimetableEntry, setEditingTimetableEntry] = React.useState(null);
+
+      const isTeacher = user?.role === 'teacher';
+
+      React.useEffect(() => {
+        if (editingItem && editingItem.date) {
+          setEventTitle(editingItem.title);
+          setEventDate(editingItem.date);
+          setEventTime(editingItem.time);
+          setEventSubject(editingItem.subject);
+          setShowEventModal(true);
+        } else if (editingItem && editingItem.day) {
+          setTimetableTitle(editingItem.title);
+          setTimetableTime(editingItem.time);
+          setTimetableSubject(editingItem.subject);
+          setTimetableDay(editingItem.day);
+          setEditingTimetableEntry(editingItem);
+          setShowTimetableModal(true);
+        }
+      }, [editingItem]);
+      
+      const handleEventSubmit = (e) => {
+        e.preventDefault();
+        if (eventTitle && eventDate && eventTime && eventSubject) {
+          if (editingItem && editingItem.date) {
+            updateEvent({ ...editingItem, title: eventTitle, date: eventDate, time: eventTime, subject: eventSubject });
+          } else {
+            addEvent({ title: eventTitle, date: eventDate, time: eventTime, subject: eventSubject });
+          }
+          resetEventForm();
+        }
+      };
+
+      const handleTimetableSubmit = (e) => {
+        e.preventDefault();
+        if (timetableTitle && timetableTime && timetableSubject && timetableDay) {
+          if (editingTimetableEntry) {
+            updateTimetableEntry(timetableDay, { ...editingTimetableEntry, title: timetableTitle, time: timetableTime, subject: timetableSubject });
+          } else {
+            addTimetableEntry(timetableDay, { title: timetableTitle, time: timetableTime, subject: timetableSubject });
+          }
+          resetTimetableForm();
+        }
+      };
+      
+      const resetEventForm = () => {
+        setEventTitle(''); setEventDate(''); setEventTime(''); setEventSubject('');
+        setShowEventModal(false); setEditingItem(null);
+      };
+
+      const resetTimetableForm = () => {
+        setTimetableTitle(''); setTimetableTime(''); setTimetableSubject(''); setTimetableDay('Monday');
+        setShowTimetableModal(false); setEditingTimetableEntry(null); setEditingItem(null);
+      };
+
+      const getDayName = (dateString) => {
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const date = new Date(dateString);
+        return days[date.getDay()];
+      };
+
+      const getEventsForSelectedDate = () => {
+        const dayName = getDayName(selectedDate);
+        const dailyTimetableEvents = weeklyTimetable[dayName] || [];
+        
+        const oneOffEvents = events.filter(event => event.date === selectedDate);
+
+        const combinedEvents = [...dailyTimetableEvents, ...oneOffEvents].sort((a, b) => {
+          const timeA = a.time.split(':').map(Number);
+          const timeB = b.time.split(':').map(Number);
+          if (timeA[0] !== timeB[0]) return timeA[0] - timeB[0];
+          return timeA[1] - timeB[1];
+        });
+        return combinedEvents;
+      };
+
+      const displayedEvents = getEventsForSelectedDate();
+      const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      
+      return (
+        <div className="p-4 lg:p-6 space-y-6">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold text-gray-900">Class Schedule</h2>
+            {isTeacher && (
+              <Button variant="primary" onClick={() => { setEditingItem(null); setShowEventModal(true); }}>Add One-Off Event</Button>
+            )}
+          </div>
+          
+          <Card className="p-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4 md:mb-0">Daily Schedule View</h3>
+              <Input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="w-full md:w-auto" />
+            </div>
+            
+            <div className="bg-white rounded-lg border">
+              <div className="px-4 py-3 border-b">
+                <h4 className="text-base font-medium text-gray-900">
+                  {new Date(selectedDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </h4>
+              </div>
+              
+              <div className="divide-y">
+                {displayedEvents.length > 0 ? (
+                  displayedEvents.map((event) => (
+                    <div key={event.id} className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h5 className="text-base font-medium text-gray-900">{event.title}</h5>
+                          <p className="text-sm text-gray-500">{event.time}</p>
+                        </div>
+                        <div className="flex items-center">
+                          <span className="px-2 py-1 text-xs bg-teal-100 text-teal-800 rounded-full mr-2">{event.subject}</span>
+                          {isTeacher && (
+                            <>
+                              {event.date ? (
+                                <button onClick={() => setEditingItem(event)} className="text-blue-600 hover:text-blue-900 mr-2">
+                                  <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                  </svg>
+                                </button>
+                              ) : (
+                                <button onClick={() => { setEditingItem({...event, day: getDayName(selectedDate)}); }} className="text-blue-600 hover:text-blue-900 mr-2">
+                                  <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                  </svg>
+                                </button>
+                              )}
+                              {event.date ? (
+                                <button onClick={() => deleteEvent(event.id)} className="text-red-600 hover:text-red-900">
+                                  <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              ) : (
+                                <button onClick={() => deleteTimetableEntry(dayName, event.id)} className="text-red-600 hover:text-red-900">
+                                  <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-8 text-center">
+                    <p className="text-gray-500">No events scheduled for this date</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Weekly Timetable</h2>
+              {isTeacher && (
+                <Button variant="primary" onClick={() => {setEditingTimetableEntry(null); setShowTimetableModal(true);}}>Add Timetable Entry</Button>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {weekDays.map(day => (
+                <div key={day} className="border rounded-lg p-3 bg-gray-50">
+                  <h4 className="font-semibold text-gray-800 mb-2">{day}</h4>
+                  {weeklyTimetable[day] && weeklyTimetable[day].length > 0 ? (
+                    <ul className="space-y-2">
+                      {weeklyTimetable[day].map(entry => (
+                        <li key={entry.id} className="flex items-center justify-between text-sm">
+                          <div>
+                            <span className="font-medium text-gray-900">{entry.title}</span> - {entry.time}
+                            <span className="ml-2 px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">{entry.subject}</span>
+                          </div>
+                          {isTeacher && (
+                            <div>
+                              <button onClick={() => { setEditingItem({...entry, day: day}); }} className="text-blue-600 hover:text-blue-900 mr-2">
+                                <svg className="h-4 w-4 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                              </button>
+                              <button onClick={() => deleteTimetableEntry(day, entry.id)} className="text-red-600 hover:text-red-900">
+                                <svg className="h-4 w-4 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-500">No recurring events</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
+          
+          {isTeacher && showEventModal && (
+            <div className="fixed inset-0 z-50 overflow-y-auto">
+              <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+                <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+                  <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+                </div>
+                <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+                <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                  <form onSubmit={handleEventSubmit}>
+                    <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">{editingItem && editingItem.date ? 'Edit One-Off Event' : 'Add New One-Off Event'}</h3>
+                      <div className="space-y-4">
+                        <Input label="Event Title" placeholder="Enter event title" value={eventTitle}
+                          onChange={(e) => setEventTitle(e.target.value)} required />
+                        <Input label="Date" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} required />
+                        <Input label="Time" type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} required />
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                          <select value={eventSubject} onChange={(e) => setEventSubject(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" required>
+                            <option value="">Select Subject</option>
+                            <option value="Mathematics">Mathematics</option>
+                            <option value="Science">Science</option>
+                            <option value="English">English</option>
+                            <option value="History">History</option>
+                            <option value="Geography">Geography</option>
+                            <option value="Art">Art</option>
+                            <option value="Music">Music</option>
+                            <option value="Physical Education">Physical Education</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                      <Button type="submit" variant="primary" className="w-full sm:w-auto sm:ml-3">
+                        {editingItem && editingItem.date ? 'Update Event' : 'Add Event'}
+                      </Button>
+                      <Button type="button" variant="outline" className="mt-3 w-full sm:mt-0 sm:w-auto" onClick={resetEventForm}>Cancel</Button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isTeacher && showTimetableModal && (
+            <div className="fixed inset-0 z-50 overflow-y-auto">
+              <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+                <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+                  <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+                </div>
+                <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+                <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                  <form onSubmit={handleTimetableSubmit}>
+                    <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">{editingTimetableEntry ? 'Edit Timetable Entry' : 'Add New Timetable Entry'}</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Day of Week</label>
+                          <select value={timetableDay} onChange={(e) => setTimetableDay(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" required>
+                            {weekDays.map(day => <option key={day} value={day}>{day}</option>)}
+                          </select>
+                        </div>
+                        <Input label="Title" placeholder="e.g., Math Class" value={timetableTitle}
+                          onChange={(e) => setTimetableTitle(e.target.value)} required />
+                        <Input label="Time" type="time" value={timetableTime} onChange={(e) => setTimetableTime(e.target.value)} required />
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                          <select value={timetableSubject} onChange={(e) => setTimetableSubject(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" required>
+                            <option value="">Select Subject</option>
+                            <option value="Mathematics">Mathematics</option>
+                            <option value="Science">Science</option>
+                            <option value="English">English</option>
+                            <option value="History">History</option>
+                            <option value="Geography">Geography</option>
+                            <option value="Art">Art</option>
+                            <option value="Music">Music</option>
+                            <option value="Physical Education">Physical Education</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                      <Button type="submit" variant="primary" className="w-full sm:w-auto sm:ml-3">
+                        {editingTimetableEntry ? 'Update Entry' : 'Add Entry'}
+                      </Button>
+                      <Button type="button" variant="outline" className="mt-3 w-full sm:mt-0 sm:w-auto" onClick={resetTimetableForm}>Cancel</Button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+    
+    const AlertsPage = () => {
+      const { alerts, addAlert, updateAlert, deleteAlert, editingItem, setEditingItem, user } = React.useContext(AppContext);
+      const [showModal, setShowModal] = React.useState(false);
+      const [alertTitle, setAlertTitle] = React.useState('');
+      const [alertMessage, setAlertMessage] = React.useState('');
+      const [alertPriority, setAlertPriority] = React.useState('medium');
+
+      const isTeacher = user?.role === 'teacher';
+      
+      React.useEffect(() => {
+        if (editingItem) {
+          setAlertTitle(editingItem.title);
+          setAlertMessage(editingItem.message);
+          setAlertPriority(editingItem.priority);
+          setShowModal(true);
+        }
+      }, [editingItem]);
+      
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        if (alertTitle && alertMessage) {
+          if (editingItem) {
+            updateAlert({ ...editingItem, title: alertTitle, message: alertMessage, priority: alertPriority });
+          } else {
+            addAlert({ title: alertTitle, message: alertMessage, priority: alertPriority });
+          }
+          resetForm();
+        }
+      };
+      
+      const resetForm = () => {
+        setAlertTitle(''); setAlertMessage(''); setAlertPriority('medium');
+        setShowModal(false); setEditingItem(null);
+      };
+      
+      const getPriorityBadgeClass = (priority) => {
+        switch (priority) {
+          case 'high': return 'bg-red-100 text-red-800';
+          case 'medium': return 'bg-yellow-100 text-yellow-800';
+          case 'low': return 'bg-green-100 text-green-800';
+          default: return 'bg-gray-100 text-gray-800';
+        }
+      };
+      
+      return (
+        <div className="p-4 lg:p-6 space-y-6">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold text-gray-900">Alerts & Announcements</h2>
+            {isTeacher && (
+              <Button variant="primary" onClick={() => setShowModal(true)}>Create Alert</Button>
+            )}
+          </div>
+          
+          <Card className="p-4">
+            <div className="space-y-4">
+              {alerts.map((alert) => (
+                <div key={alert.id} className="p-4 border rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium text-gray-900">{alert.title}</h3>
+                    <span className={`px-2 py-1 text-xs rounded-full ${getPriorityBadgeClass(alert.priority)}`}>{alert.priority}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-gray-600">{alert.message}</p>
+                  <div className="mt-4 flex items-center justify-between">
+                    <span className="text-xs text-gray-500">{alert.date}</span>
+                    {isTeacher && (
+                      <div>
+                        <button onClick={() => setEditingItem(alert)} className="text-blue-600 hover:text-blue-900 text-sm mr-3">Edit</button>
+                        <button onClick={() => deleteAlert(alert.id)} className="text-red-600 hover:text-red-900 text-sm">Delete</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+          
+          {isTeacher && showModal && (
+            <div className="fixed inset-0 z-50 overflow-y-auto">
+              <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+                <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+                  <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+                </div>
+                <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+                <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                  <form onSubmit={handleSubmit}>
+                    <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">{editingItem ? 'Edit Alert' : 'Create New Alert'}</h3>
+                      <div className="space-y-4">
+                        <Input label="Alert Title" placeholder="Enter alert title" value={alertTitle}
+                          onChange={(e) => setAlertTitle(e.target.value)} required />
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+                          <textarea value={alertMessage} onChange={(e) => setAlertMessage(e.target.value)} rows="4"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                            placeholder="Enter alert message" required></textarea>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                          <select value={alertPriority} onChange={(e) => setAlertPriority(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                      <Button type="submit" variant="primary" className="w-full sm:w-auto sm:ml-3">
+                        {editingItem ? 'Update Alert' : 'Create Alert'}
+                      </Button>
+                      <Button type="button" variant="outline" className="mt-3 w-full sm:mt-0 sm:w-auto" onClick={resetForm}>Cancel</Button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+    
+    const ChatPage = () => {
+      const [messages, setMessages] = React.useState([
+        { id: 1, text: "Hello! I'm your SCMS Assistant. How can I help you today?", sender: 'bot' }
+      ]);
+      const [input, setInput] = React.useState('');
+      const messagesEndRef = React.useRef(null);
+      
+      React.useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, [messages]);
+      
+      const handleSendMessage = (e) => {
+        e.preventDefault();
+        if (!input.trim()) return;
+        
+        const userMessage = { id: messages.length + 1, text: input, sender: 'user' };
+        setMessages([...messages, userMessage]);
+        setInput('');
+        
+        setTimeout(() => {
+          let botResponse;
+          const userInput = input.toLowerCase();
+          
+          if (userInput.includes('attendance') || userInput.includes('mark')) {
+            botResponse = "Attendance is tracked by teachers. You can see your general attendance status on the dashboard.";
+          } else if (userInput.includes('resource') || userInput.includes('download')) {
+            botResponse = "You can view and download learning resources from the Resources page. Teachers upload these files.";
+          } else if (userInput.includes('schedule') || userInput.includes('timetable') || userInput.includes('event')) {
+            botResponse = "The Schedule page shows your daily class schedule and recurring timetable. Teachers manage these schedules.";
+          } else if (userInput.includes('alert') || userInput.includes('announcement')) {
+            botResponse = "You can view important alerts and announcements on the Alerts page. These are posted by teachers or administration.";
+          } else if (userInput.includes('edit') || userInput.includes('delete') || userInput.includes('upload')) {
+            botResponse = "I'm sorry, student accounts do not have permission to edit, delete, or upload content. This functionality is available to teachers.";
+          } else {
+            botResponse = "I'm here to help you with the Smart Classroom Management System. You can ask me about available features for students like viewing schedules, downloading resources, or checking alerts!";
+          }
+          
+          const botMsg = { id: messages.length + 2, text: botResponse, sender: 'bot' };
+          setMessages(msgs => [...msgs, botMsg]);
+        }, 600);
+      };
+      
+      return (
+        <div className="p-4 lg:p-6">
+          <Card className="p-4 h-[calc(100vh-12rem)]">
+            <div className="flex flex-col h-full">
+              <div className="flex items-center justify-between pb-4 border-b">
+                <div className="flex items-center">
+                  <div className="h-10 w-10 rounded-full teal-gradient flex items-center justify-center text-white">
+                    <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-lg font-medium text-gray-900">SCMS Assistant</h3>
+                    <p className="text-sm text-gray-500">Online</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto py-4 space-y-4">
+                {messages.map((message) => (
+                  <div key={message.id} className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-xs md:max-w-md lg:max-w-lg px-4 py-2 rounded-lg chat-message ${
+                      message.sender === 'user' ? 'bg-teal-500 text-white' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      <p className="text-sm">{message.text}</p>
+                    </div>
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+              
+              <div className="pt-4 border-t">
+                <form onSubmit={handleSendMessage} className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Type your message..."
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  />
+                  <Button type="submit" variant="primary">
+                    <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  </Button>
+                </form>
+              </div>
+            </div>
+          </Card>
+        </div>
+      );
+    };
+    
+    // Main App Component
+    const App = () => {
+      const { user, currentPage, notification } = React.useContext(AppContext);
+      
+      const renderPage = () => {
+        if (!user) {
+          return currentPage === 'login' ? <LoginPage /> : <SignupPage />;
+        }
+        
+        switch (currentPage) {
+          case 'dashboard': return <DashboardPage />;
+          case 'attendance': return <AttendancePage />;
+          case 'resources': return <ResourcesPage />; // Using your ResourcesPage component
+          case 'schedule': return <SchedulePage />;
+          case 'alerts': return <AlertsPage />;
+          case 'chat': return <ChatPage />;
+          default: return <DashboardPage />;
+        }
+      };
+      
+      return (
+        <>
+          {user && <Sidebar />}
+          <div className={`${user ? 'lg:ml-64' : ''} min-h-screen flex flex-col`}>
+            {user && <Header />}
+            <main className="flex-1">
+              {renderPage()}
+            </main>
+          </div>
+          {notification && <Notification message={notification.message} type={notification.type} />}
+        </>
+      );
+    };
+    
+    // Render the App
+    ReactDOM.render(
+      <AppProvider>
+        <App />
+      </AppProvider>,
+      document.getElementById('root')
+    );
+  </script>
+</body>
+</html>
